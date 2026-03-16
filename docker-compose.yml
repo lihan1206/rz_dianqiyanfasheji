@@ -1,0 +1,61 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: electrical_rnd_db
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: electrical_rnd
+      TZ: Asia/Shanghai
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "33367:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: electrical_rnd_backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 8217
+      DATABASE_URL: mysql://root:root@db:3306/electrical_rnd?charset=utf8mb4
+      JWT_SECRET: electric_rnd_secret_2026
+      JWT_EXPIRE: 7d
+      UPLOAD_DIR: /app/uploads
+      TZ: Asia/Shanghai
+    ports:
+      - "18267:8217"
+    volumes:
+      - backend_uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: electrical_rnd_frontend
+    depends_on:
+      - backend
+    ports:
+      - "31267:80"
+
+volumes:
+  mysql_data:
+  backend_uploads:
+
+networks:
+  default:
+    name: dianqiyanfasheji_net
+    ipam:
+      config:
+        - subnet: 10.230.0.0/24

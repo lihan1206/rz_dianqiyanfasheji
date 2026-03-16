@@ -1,0 +1,8 @@
+.git
+.gitignore
+**/node_modules
+**/.DS_Store
+**/*.log
+Prompt.md
+user_rule.md
+mb1.docx
