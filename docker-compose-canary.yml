@@ -1,0 +1,210 @@
+version: '3.8'
+
+services:
+  # MySQL数据库
+  db:
+    image: mysql:8.0
+    container_name: electrical_rnd_db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${DB_NAME:-electrical_rnd}
+      MYSQL_USER: ${DB_USER:-app_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-app_pass}
+      TZ: Asia/Shanghai
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max_connections=1000
+    ports:
+      - "${DB_PORT:-33367}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - backend_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+    restart: unless-stopped
+
+  # Redis缓存（会话存储和缓存）
+  redis:
+    image: redis:7-alpine
+    container_name: electrical_rnd_redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_pass} --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-redis_pass}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # 后端服务 - 稳定版本
+  backend-stable:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: electrical_rnd_backend:${STABLE_VERSION:-stable}
+    container_name: electrical_rnd_backend_stable
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 8217
+      DATABASE_URL: mysql://${DB_USER:-app_user}:${DB_PASSWORD:-app_pass}@db:3306/${DB_NAME:-electrical_rnd}?charset=utf8mb4
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_pass}@redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-electric_rnd_secret_2026}
+      JWT_EXPIRE: ${JWT_EXPIRE:-7d}
+      UPLOAD_DIR: /app/uploads
+      LOG_LEVEL: info
+      TZ: Asia/Shanghai
+      SERVICE_VERSION: ${STABLE_VERSION:-stable}
+    volumes:
+      - backend_uploads:/app/uploads
+      - ./logs/backend-stable:/app/logs
+    networks:
+      - backend_network
+      - api_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8217/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      replicas: ${STABLE_REPLICAS:-2}
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    restart: unless-stopped
+
+  # 后端服务 - 灰度版本（金丝雀发布）
+  backend-canary:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: electrical_rnd_backend:${CANARY_VERSION:-canary}
+    container_name: electrical_rnd_backend_canary
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 8217
+      DATABASE_URL: mysql://${DB_USER:-app_user}:${DB_PASSWORD:-app_pass}@db:3306/${DB_NAME:-electrical_rnd}?charset=utf8mb4
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_pass}@redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-electric_rnd_secret_2026}
+      JWT_EXPIRE: ${JWT_EXPIRE:-7d}
+      UPLOAD_DIR: /app/uploads
+      LOG_LEVEL: info
+      TZ: Asia/Shanghai
+      SERVICE_VERSION: ${CANARY_VERSION:-canary}
+    volumes:
+      - backend_uploads:/app/uploads
+      - ./logs/backend-canary:/app/logs
+    networks:
+      - backend_network
+      - api_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8217/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      replicas: ${CANARY_REPLICAS:-1}
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    restart: unless-stopped
+    profiles:
+      - canary
+
+  # 前端服务
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: electrical_rnd_frontend:${FRONTEND_VERSION:-latest}
+    container_name: electrical_rnd_frontend
+    depends_on:
+      - backend-stable
+    volumes:
+      - ./logs/nginx-frontend:/var/log/nginx
+    networks:
+      - api_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Nginx反向代理 + API Gateway（灰度发布核心）
+  nginx-gateway:
+    image: nginx:1.25-alpine
+    container_name: electrical_rnd_gateway
+    depends_on:
+      - backend-stable
+      - frontend
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx-gateway:/var/log/nginx
+    networks:
+      - api_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+# 数据卷
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_uploads:
+    driver: local
+
+# 网络隔离
+networks:
+  backend_network:
+    name: electrical_rnd_backend
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.1.0/24
+  api_network:
+    name: electrical_rnd_api
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.2.0/24
