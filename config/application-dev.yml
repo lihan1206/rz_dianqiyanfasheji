@@ -1,0 +1,25 @@
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:project_db}?useSSL=false&serverTimezone=UTC
+    username: ${DB_USER:dev_user}
+    password: ${DB_PASSWORD:dev_pass}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+  
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    database: 0
+
+# 开发环境特定配置
+feature:
+ enable-cache: false
+  enable-async: false
+  
+external:
+  services:
+    component-service: http://localhost:5002
+    bom-service: http://localhost:5001

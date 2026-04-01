@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: ${APP_NAME:project-service}
+  profiles:
+    active: ${APP_ENV:dev}
+  
+  # 配置加密
+  config:
+    import: optional:configtree:/run/secrets/
+  
+server:
+  port: ${APP_PORT:5000}
+
+# 日志配置
+logging:
+  level:
+    root: ${LOG_LEVEL:INFO}
+    com.company.project: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: /var/log/${APP_NAME}/application.log
+
+# 健康检查
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized

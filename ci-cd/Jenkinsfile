@@ -1,0 +1,101 @@
+pipeline {
+    agent any
+    
+    environment {
+        DOCKER_REGISTRY = 'harbor.company.com'
+        SERVICE_NAME = 'project-service'
+        K8S_NAMESPACE = 'production'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                sh 'echo "Git Commit: $(git rev-parse --short HEAD)"'
+            }
+        }
+        
+        stage('Code Quality') {
+            parallel {
+                stage('Lint') {
+                    steps {
+                        sh 'flake8 . --max-line-length=120'
+                    }
+                }
+                stage('Unit Test') {
+                    steps {
+                        sh 'pytest tests/ --cov=app --cov-report=xml'
+                    }
+                }
+                stage('Security Scan') {
+                    steps {
+                        sh 'snyk test --severity-threshold=high'
+                    }
+                }
+            }
+        }
+        
+        stage('Build Image') {
+            steps {
+                script {
+                    def imageTag = "${env.DOCKER_REGISTRY}/${env.SERVICE_NAME}:${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
+                    sh """
+                        docker build -t ${imageTag} .
+                        docker push ${imageTag}
+                        docker tag ${imageTag} ${env.DOCKER_REGISTRY}/${env.SERVICE_NAME}:latest
+                        docker push ${env.DOCKER_REGISTRY}/${env.SERVICE_NAME}:latest
+                    """
+                    env.IMAGE_TAG = imageTag
+                }
+            }
+        }
+        
+        stage('Deploy to Dev') {
+            when {
+                branch 'develop'
+            }
+            steps {
+                sh """
+                    kubectl set image deployment/${env.SERVICE_NAME} \
+                        ${env.SERVICE_NAME}=${env.IMAGE_TAG} \
+                        -n dev --record
+                    kubectl rollout status deployment/${env.SERVICE_NAME} -n dev
+                """
+            }
+        }
+        
+        stage('Integration Test') {
+            when {
+                branch 'develop'
+            }
+            steps {
+                sh 'pytest tests/integration/ -v'
+            }
+        }
+        
+        stage('Deploy to Production') {
+            when {
+                branch 'main'
+            }
+            steps {
+                input message: 'Deploy to Production?', ok: 'Deploy'
+                sh """
+                    kubectl set image deployment/${env.SERVICE_NAME} \
+                        ${env.SERVICE_NAME}=${env.IMAGE_TAG} \
+                        -n ${env.K8S_NAMESPACE} --record
+                    kubectl rollout status deployment/${env.SERVICE_NAME} -n ${env.K8S_NAMESPACE}
+                """
+            }
+        }
+    }
+    
+    post {
+        always {
+            junit 'test-reports/*.xml'
+            cleanWs()
+        }
+        failure {
+            slackSend(color: 'danger', message: "Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}")
+        }
+    }
+}

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+    <changeSet id="004" author="dev-team" context="dev,staging,prod">
+        <comment>添加项目表和BOM表的复合索引</comment>
+        
+        <createIndex tableName="projects" indexName="idx_project_created">
+            <column name="created_by"/>
+            <column name="created_at"/>
+        </createIndex>
+        
+        <createIndex tableName="bom_headers" indexName="idx_bom_project_version">
+            <column name="project_id"/>
+            <column name="version"/>
+        </createIndex>
+        
+        <createIndex tableName="bom_items" indexName="idx_bom_item_component">
+            <column name="bom_id"/>
+            <column name="component_id"/>
+        </createIndex>
+        
+        <rollback>
+            <dropIndex tableName="projects" indexName="idx_project_created"/>
+            <dropIndex tableName="bom_headers" indexName="idx_bom_project_version"/>
+            <dropIndex tableName="bom_items" indexName="idx_bom_item_component"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

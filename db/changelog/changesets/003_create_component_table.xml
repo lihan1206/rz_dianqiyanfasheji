@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+    <changeSet id="003" author="dev-team" context="dev,staging,prod">
+        <comment>创建元器件表 - 元器件库服务核心表</comment>
+        
+        <createTable tableName="components">
+            <column name="id" type="BIGINT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="component_code" type="VARCHAR(50)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="component_name" type="VARCHAR(200)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="category" type="VARCHAR(100)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="specification" type="VARCHAR(500)"/>
+            <column name="manufacturer" type="VARCHAR(200)"/>
+            <column name="supplier" type="VARCHAR(200)"/>
+            <column name="unit_price" type="DECIMAL(15,4)" defaultValue="0"/>
+            <column name="currency" type="VARCHAR(3)" defaultValue="CNY"/>
+            <column name="status" type="VARCHAR(20)" defaultValue="ACTIVE"/>
+            <column name="created_at" type="TIMESTAMP" defaultValueComputed="${now}"/>
+            <column name="updated_at" type="TIMESTAMP" defaultValueComputed="${now}"/>
+        </createTable>
+        
+        <createTable tableName="component_categories">
+            <column name="id" type="BIGINT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="category_code" type="VARCHAR(50)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="category_name" type="VARCHAR(100)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="parent_id" type="BIGINT"/>
+            <column name="description" type="TEXT"/>
+            <column name="created_at" type="TIMESTAMP" defaultValueComputed="${now}"/>
+        </createTable>
+        
+        <createIndex tableName="components" indexName="idx_component_code">
+            <column name="component_code"/>
+        </createIndex>
+        
+        <createIndex tableName="components" indexName="idx_component_category">
+            <column name="category"/>
+        </createIndex>
+        
+        <addForeignKeyConstraint 
+            baseTableName="component_categories" 
+            baseColumnNames="parent_id"
+            constraintName="fk_category_parent"
+            referencedTableName="component_categories"
+            referencedColumnNames="id"
+            onDelete="SET NULL"/>
+        
+        <rollback>
+            <dropTable tableName="component_categories"/>
+            <dropTable tableName="components"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>
